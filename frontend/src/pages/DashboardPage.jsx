@@ -18,32 +18,99 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [recentIncidents, setRecentIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isMounted = true;
+    let retryTimer;
+
     const fetchData = async () => {
+      if (isMounted) {
+        setLoading(true);
+        setFetchError(false);
+      }
+
       try {
         const [statsRes, incidentsRes] = await Promise.all([
           incidentsAPI.getStats(),
           incidentsAPI.getPage({ page: 0, size: 5, sortBy: 'createdAt', direction: 'desc' }),
         ]);
-        setStats(statsRes.data);
-        setRecentIncidents(incidentsRes.data?.content || []);
+        if (isMounted) {
+          setStats(statsRes.data);
+          setRecentIncidents(incidentsRes.data?.content || []);
+          setRetrying(false);
+        }
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);
+        if (isMounted && retryAttempt === 0) {
+          setRetrying(true);
+          retryTimer = setTimeout(() => {
+            if (isMounted) {
+              setRetrying(false);
+              setRetryAttempt(1);
+            }
+          }, 3000);
+        } else if (isMounted) {
+          setRetrying(false);
+          setFetchError(true);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchData();
-  }, []);
+
+    return () => {
+      isMounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [retryAttempt]);
+
+  const handleRetry = () => {
+    setFetchError(false);
+    setRetrying(false);
+    setRetryAttempt((attempt) => attempt + 1);
+  };
 
   if (loading) {
     return (
       <div className="page-container">
         <div className="loading-spinner">
           <div className="spinner" />
+        </div>
+      </div>
+    );
+  }
+
+  if (retrying) {
+    return (
+      <div className="page-container">
+        <div className="card" style={{ textAlign: 'center', padding: 'var(--space-8)' }}>
+          <div className="loading-spinner" style={{ minHeight: 'auto', marginBottom: 'var(--space-4)' }}>
+            <div className="spinner" />
+          </div>
+          <h2>Waking up live SOC intelligence</h2>
+          <p style={{ color: 'var(--color-text-secondary)' }}>The dashboard service is starting. Retrying automatically in a moment...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="page-container">
+        <div className="card" role="alert" style={{ textAlign: 'center', padding: 'var(--space-8)' }}>
+          <h2>Unable to load live SOC intelligence</h2>
+          <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-5)' }}>
+            The dashboard data could not be loaded. Please try again.
+          </p>
+          <button className="btn btn-primary" type="button" onClick={handleRetry}>
+            Retry
+          </button>
         </div>
       </div>
     );
