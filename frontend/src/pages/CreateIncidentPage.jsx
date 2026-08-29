@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { incidentsAPI } from '../api/client';
 import RiskGauge from '../components/RiskGauge';
@@ -21,9 +21,18 @@ export default function CreateIncidentPage() {
   });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [isWakingUp, setIsWakingUp] = useState(false);
+  const [submitError, setSubmitError] = useState('');
   const [success, setSuccess] = useState(false);
   const [aiSuggesting, setAiSuggesting] = useState(false);
   const [aiReasoning, setAiReasoning] = useState('');
+
+  useEffect(() => {
+    if (!loading) return undefined;
+
+    const wakeUpTimer = setTimeout(() => setIsWakingUp(true), 4000);
+    return () => clearTimeout(wakeUpTimer);
+  }, [loading]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -106,7 +115,9 @@ export default function CreateIncidentPage() {
     e.preventDefault();
     if (!validate()) return;
 
+    setIsWakingUp(false);
     setLoading(true);
+    setSubmitError('');
     try {
       await incidentsAPI.create(formData);
       setSuccess(true);
@@ -118,9 +129,12 @@ export default function CreateIncidentPage() {
       const fieldErrors = err.response?.data?.fieldErrors;
       if (fieldErrors) {
         setErrors(fieldErrors);
+      } else {
+        setSubmitError('Unable to submit the incident right now. Please try again after the service responds.');
       }
     } finally {
       setLoading(false);
+      setIsWakingUp(false);
     }
   };
 
@@ -165,6 +179,18 @@ export default function CreateIncidentPage() {
         <div style={{ padding: '12px 16px', backgroundColor: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '8px', marginBottom: '20px', fontSize: '0.875rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Bot size={18} style={{ color: '#818cf8' }} />
           {aiReasoning}
+        </div>
+      )}
+
+      {isWakingUp && loading && (
+        <div role="status" style={{ padding: '12px 16px', backgroundColor: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: '8px', marginBottom: '20px', fontSize: '0.875rem', color: '#dbeafe' }}>
+          Connecting to backend services, please wait while the incident is submitted...
+        </div>
+      )}
+
+      {submitError && (
+        <div role="alert" style={{ padding: '12px 16px', backgroundColor: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: '8px', marginBottom: '20px', fontSize: '0.875rem', color: '#fecaca' }}>
+          {submitError}
         </div>
       )}
 

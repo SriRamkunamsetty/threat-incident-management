@@ -52,13 +52,16 @@ client.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // Auto-retry on Network Errors, Timeouts, or 502/503/504 Gateway errors (Server redeploying/sleeping)
+    // Auto-retry on Network Errors, Timeouts, or 502/503/504 Gateway errors (Server redeploying/sleeping).
+    // Incident creation opts in explicitly because retrying a POST can duplicate a report if the server
+    // accepted it before the client observed the timeout.
     const isServerRebuildingOrSleeping = !response || (response.status >= 502 && response.status <= 504) || error.code === 'ECONNABORTED';
+    const retryLimit = config?.retryable ? 2 : 3;
 
-    if (isServerRebuildingOrSleeping && config && (!config._retryCount || config._retryCount < 3)) {
+    if (isServerRebuildingOrSleeping && config && (!config._retryCount || config._retryCount < retryLimit)) {
       config._retryCount = (config._retryCount || 0) + 1;
       const delay = Math.pow(2, config._retryCount) * 1000; // 2s, 4s, 8s exponential backoff
-      console.warn(`[ThreatGuard API] Server is starting or deploying (Retry ${config._retryCount}/3). Retrying in ${delay / 1000}s...`);
+      console.warn(`[ThreatGuard API] Server is starting or deploying (Retry ${config._retryCount}/${retryLimit}). Retrying in ${delay / 1000}s...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
       return client(config);
     }
@@ -80,7 +83,7 @@ export const incidentsAPI = {
   getAll: () => client.get('/incidents'),
   getPage: (params = {}) => client.get('/incidents/page', { params }),
   getById: (id) => client.get(`/incidents/${id}`),
-  create: (incident) => client.post('/incidents', incident),
+  create: (incident) => client.post('/incidents', incident, { retryable: true }),
   update: (id, incident) => client.put(`/incidents/${id}`, incident),
   updateStatus: (id, status) => client.patch(`/incidents/${id}/status?status=${status}`),
   assignAnalyst: (id, analystUsername, analystName) => client.patch(`/incidents/${id}/assign`, { analystUsername, analystName }),
